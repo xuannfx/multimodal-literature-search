@@ -19,3 +19,6 @@ logs/
 # Build directories
 dist/
 build/
+
+# output
+artifacts/

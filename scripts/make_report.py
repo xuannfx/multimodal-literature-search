@@ -16,6 +16,56 @@ def _safe(s: Any) -> str:
     return "" if s is None else str(s)
 
 
+def _parse_date(value: Any) -> dt.date | None:
+    if value in (None, ""):
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m", "%Y"):
+        try:
+            parsed = dt.datetime.strptime(s, fmt)
+            if fmt == "%Y":
+                return dt.date(parsed.year, 1, 1)
+            if fmt == "%Y-%m":
+                return dt.date(parsed.year, parsed.month, 1)
+            return parsed.date()
+        except ValueError:
+            continue
+    return None
+
+
+def _citations_per_year(p: dict[str, Any], *, as_of: dt.date) -> str:
+    citations = p.get("citationCount")
+    if citations in (None, ""):
+        return ""
+    try:
+        citations_i = int(citations)
+    except Exception:
+        return ""
+
+    d = _parse_date(p.get("publicationDate"))
+    if d is None:
+        # If we only know the year (or date is missing), keep blank to avoid
+        # misleading "per-year" numbers.
+        return ""
+
+    days = max(1, (as_of - d).days)
+    value = citations_i / (days / 365.25)
+    return f"{value:.2f}"
+
+
+def _paper_type(p: dict[str, Any]) -> str:
+    venue = str(p.get("venue") or "").strip()
+    if not venue or "arxiv" in venue.lower():
+        return "preprint"
+    return "published"
+
+
+def _md_escape_table(text: str) -> str:
+    # Escape for Markdown table cells.
+    return text.replace("|", "\\|").replace("\n", " ").replace("\r", " ").replace("]", "\\]")
+
 def _paper_ref(i: int, p: dict[str, Any]) -> str:
     authors = p.get("authors") or []
     authors_s = ", ".join(authors[:8]) + (" et al." if len(authors) > 8 else "")
@@ -68,25 +118,59 @@ def main() -> int:
     until = meta.get("until") or ""
     retrieved_at = meta.get("retrievedAt") or dt.datetime.now().isoformat(timespec="seconds")
     sources = ", ".join(meta.get("sources") or [])
+    as_of = _parse_date(meta.get("until")) or _parse_date(str(retrieved_at)[:10]) or dt.date.today()
 
     title = args.title or f"{topic} 的多模态研究最新进展（{since}–{until}）"
+    tldr = "（由模型生成）用一句话给出本次调研的结论：趋势概括 + 关键瓶颈 + 下一步最优先行动。"
 
-    # Table
+    # Reference table (single block)
     table_lines = [
-        "| # | 标题 | 发表时间 | 来源 | Venue | 链接 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| # | 标题 | 作者 | Venue | 发表时间 | 引用 | 引用/年 | 类型 | DOI | arXivId | 来源 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for i, p in enumerate(papers, 1):
-        t = _safe(p.get("title")).replace("|", "\\|")
-        pub = _safe(p.get("publicationDate")) or _safe(p.get("year"))
-        src = _safe(p.get("source"))
-        venue = _safe(p.get("venue")).replace("|", "\\|")
-        url = _safe(p.get("url"))
-        table_lines.append(f"| {i} | {t} | {pub} | {src} | {venue} | {url} |")
+        raw_title = _safe(p.get("title")).strip()
+        url = _safe(p.get("url")).strip()
+        title_cell = _md_escape_table(raw_title)
+        if url:
+            title_cell = f"[{title_cell}]({url})"
 
-    refs = "\n".join(_paper_ref(i, p) for i, p in enumerate(papers, 1))
+        authors = p.get("authors") or []
+        authors_s = ", ".join([str(a) for a in authors[:5] if a]) + (" et al." if len(authors) > 5 else "")
+        authors_cell = _md_escape_table(authors_s)
+
+        venue_cell = _md_escape_table(_safe(p.get("venue")).strip())
+        date_cell = _md_escape_table(_safe(p.get("publicationDate")).strip() or _safe(p.get("year")).strip())
+        citations_cell = _md_escape_table(_safe(p.get("citationCount")).strip())
+        cpy_cell = _citations_per_year(p, as_of=as_of)
+        type_cell = _paper_type(p)
+        doi_cell = _md_escape_table(_safe(p.get("doi")).strip())
+        arxiv_cell = _md_escape_table(_safe(p.get("arxivId")).strip())
+        source_cell = _md_escape_table(_safe(p.get("source")).strip())
+
+        table_lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(i),
+                    title_cell,
+                    authors_cell,
+                    venue_cell,
+                    date_cell,
+                    citations_cell,
+                    cpy_cell,
+                    type_cell,
+                    doi_cell,
+                    arxiv_cell,
+                    source_cell,
+                ]
+            )
+            + " |"
+        )
 
     out = f"""# {title}
+
+> **TL;DR（行动建议）**：{tldr}
 
 ## 研究背景和意义
 
@@ -118,13 +202,9 @@ def main() -> int:
 - （短板与风险 2–5 条）
 - （未来 3–6 个月可操作建议 2–6 条）
 
-### 论文清单（含发表时间）
+### 参考文献表格（含影响力指标）
 
 {chr(10).join(table_lines)}
-
-### 参考文献
-
-{refs}
 """
 
     out_path = Path(args.out)

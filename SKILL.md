@@ -18,7 +18,10 @@ description: 检索多模态（视觉-语言/音频-语言/视频等）方向的
   - `sources`：检索源列表（例如：`arxiv, semanticscholar`；也可写 `PubMed/OpenReview/CVF/ACL` 等）
 - **可选输入（未提供则使用默认）**
   - `time_range`：默认最近 **18 个月**（用户说“最新/最近/2025 年以来”等时，优先转为明确日期区间并在报告写清检索日期）
-  - `limit`：默认 **5** 篇（只用 top5 生成报告；如需更全面，再提高 limit）
+  - `limit`：默认 **5** 篇。此参数决定 **最终保留并输出到 JSON 的有效论文数量**。注意：脚本会自动根据此值放大检索候选集（约 5 倍），因此建议最大不超过 **50**，否则会导致 API 限流。
+    - **推荐配置**：日常调研建议设为 **20**；深度综述建议设为 **50**。
+  - `report_top_n`（仅报告阶段）：生成综述时默认只取前 5 篇；若需更多，可在 `make_report.py` 中指定 `--top-n`。
+    - **推荐配置**：日常调研建议 **5** 篇；深度综述建议 **10–15** 篇。
   - `language`：默认中文
   - `focus`：可选聚焦（例如：`VLM 对齐` / `视频理解` / `多模态 Agent` / `3D+LLM` / `医疗多模态`）
 
@@ -76,10 +79,11 @@ python3 skills/multimodal-literature-search/scripts/fetch_papers.py \
 
 ## 输出规范（必须满足）
 
+- 报告标题下必须包含一个高亮 TL;DR 块：**由模型生成**的一句话结论（趋势概括 + 关键瓶颈 + 下一步最优先行动）。
 - 报告中必须包含“检索信息”一段：检索日期、时间范围、检索源、关键词/作者字符串、返回/筛选篇数。
-- 必须附“论文清单”，每条至少包含：标题、作者、发表时间（或 arXiv 提交时间）、来源（arXiv/期刊/会议）、链接。
+- 必须附“参考文献表格”（单表），每条至少包含：标题（带链接）、作者、Venue、发表时间（或 year）、引用数、引用/年、类型、DOI/arXivId、来源。
 - 若用户强调“最新”，排序优先按发表/提交时间倒序；必要时说明“预印本可能后续被接收/版本更新”。
-- 引用格式：可用编号 `[1]`… 并在末尾给出参考文献列表；同一条目给出 `URL`（如有 `DOI` 更好）。
+- 引用格式：正文可用编号 `[1]`… 指代“参考文献表格”的 `#` 列。
 
 ## 资源
 
@@ -96,6 +100,22 @@ python3 skills/multimodal-literature-search/scripts/make_report.py \
   --papers artifacts/papers.json \
   --out artifacts/report.md \
   --top-n 5
+```
+
+当输出太多（例如一年内上千篇 arXiv）只想看“影响力更高”的少量论文时，可在检索阶段直接按引用数/venue 做筛选（示例：引用数 ≥5，按引用数排序取 Top-50）：
+
+```bash
+python3 skills/multimodal-literature-search/scripts/fetch_papers.py \
+  --query "<你的查询>" \
+  --sources arxiv,semanticscholar \
+  --months 18 \
+  --enrich-s2 \
+  --sort citations \
+  --min-citations 5 \
+  --require-venue \
+  --limit 50 \
+  --out artifacts/high_impact.json \
+  --out-md artifacts/high_impact.md
 ```
 
 ### references/
