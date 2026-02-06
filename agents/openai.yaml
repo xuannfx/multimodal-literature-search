@@ -1,0 +1,4 @@
+interface:
+  display_name: "多模态最新文献检索综述"
+  short_description: "检索多模态最新论文并输出结构化综述报告与引用发表时间清单"
+  default_prompt: "请给出：(1) 检索主题关键词或作者/团队名称；(2) 检索源（如 arXiv, Semantic Scholar, PubMed, OpenReview, CVF/ACL）。可选：时间范围（默认近18个月）、返回篇数（默认5，仅用top5生成报告）、输出语言（默认中文）。我将检索并去重，按“标题/背景/研究对象/解决的问题/进展(方法)/结论与洞察”生成报告，并附论文清单（含发表时间与链接/引用）。"
